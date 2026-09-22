@@ -1,0 +1,39 @@
+services:
+  ardupilot_ros:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USERNAME: ros
+        USER_UID: "1000"
+        USER_GID: "1000"
+    image: fpv-lab2:latest
+    container_name: ardupilot_ros
+    restart: unless-stopped
+
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - GZ_VERSION=harmonic
+      # Вказуємо шлях до бібліотек Windows/WSL:
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib
+      # Примусово вмикаємо драйвер D3D12 для Mesa:
+      - MESA_LOADER_DRIVER_OVERRIDE=d3d12
+
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ${HOME}/.Xauthority:/home/ros/.Xauthority:rw
+      - ./fpv_labs:/home/ros/ros2_ws/src/fpv_labs
+      # Прокидаємо всю директорію WSL, щоб охопити і lib, і drivers:
+      - /usr/lib/wsl:/usr/lib/wsl
+
+    devices:
+      - /dev/dxg:/dev/dxg
+
+    network_mode: host
+    privileged: true
+    stdin_open: true
+    tty: true
+    working_dir: /home/ros/ros2_ws
+
+    command: sleep infinity

@@ -1,0 +1,33 @@
+# ROS 2 / colcon generated output
+build/
+install/
+log/
+
+# Python bytecode and environments
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Local configuration and editor files
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Simulation/runtime output
+*.ulg
+*.tlog
+*.bin
+*.log
+gazebo.log
+gz.log
+
+# Accidental empty file from early workspace setup
+/fpv_lab2q
