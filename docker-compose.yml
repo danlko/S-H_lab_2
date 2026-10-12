@@ -10,6 +10,7 @@ services:
     image: fpv-lab2:latest
     container_name: ardupilot_ros
     restart: unless-stopped
+    cpus: "12.0"
 
     environment:
       - DISPLAY=${DISPLAY}
@@ -17,8 +18,9 @@ services:
       - GZ_VERSION=harmonic
       # Вказуємо шлях до бібліотек Windows/WSL:
       - LD_LIBRARY_PATH=/usr/lib/wsl/lib
-      # Примусово вмикаємо драйвер D3D12 для Mesa:
+      # Use WSL's D3D12 GPU bridge and select the integrated Radeon explicitly.
       - MESA_LOADER_DRIVER_OVERRIDE=d3d12
+      - MESA_D3D12_DEFAULT_ADAPTER_NAME=AMD Radeon
 
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix

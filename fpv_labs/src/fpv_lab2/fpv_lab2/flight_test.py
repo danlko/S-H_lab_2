@@ -25,7 +25,7 @@ class FlightTestNode(FlightNode):
 
     def control_loop(self):
         if self.phase == 'airborne':
-            if self.status is None or not self.status.armed:
+            if not self.armed_or_starting():
                 self.fail('Vehicle disarmed unexpectedly during flight')
             elif self.altitude is None or self.initial_altitude is None:
                 now = time.monotonic()

@@ -1,5 +1,6 @@
 """Shared ArduPilot DDS service sequence for both flight examples."""
 from functools import partial
+import time
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_srvs.srv import Trigger
@@ -11,11 +12,16 @@ POSITION_QOS = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)
 
 class FlightNode(Node):
     GUIDED_MODE, LAND_MODE, TAKEOFF_ALTITUDE = 4, 9, 2.0
+    PREARM_TIMEOUT_SECONDS, PREARM_RETRY_SECONDS = 30.0, 1.0
 
     def __init__(self, name):
         super().__init__(name)
         self.status = None
         self.request_in_progress = self.failed = self.finished = False
+        self.takeoff_accepted_at = None
+        self.armed_seen = False
+        self.prearm_started_at = None
+        self.next_prearm_check_at = 0.0
         self.phase = 'wait'
         self.status_sub = self.create_subscription(Status, '/ap/v1/status', self._status_cb, 10)
         self.prearm_client = self.create_client(Trigger, '/ap/v1/prearm_check')
@@ -40,7 +46,13 @@ class FlightNode(Node):
                 self.get_logger().info('ArduPilot status and flight services are ready')
                 self.phase = 'prearm'
         elif self.phase == 'prearm' and not self.request_in_progress:
-            self._call(self.prearm_client, Trigger.Request(), self._prearm_done, 'pre-arm check')
+            now = time.monotonic()
+            if self.prearm_started_at is None:
+                self.prearm_started_at = now
+            if now - self.prearm_started_at >= self.PREARM_TIMEOUT_SECONDS:
+                self.fail('Pre-arm did not become ready within 30 seconds')
+            elif now >= self.next_prearm_check_at:
+                self._call(self.prearm_client, Trigger.Request(), self._prearm_done, 'pre-arm check')
         elif self.phase == 'guided' and not self.request_in_progress:
             req = ModeSwitch.Request(); req.mode = self.GUIDED_MODE
             self._call(self.mode_client, req, self._guided_done, 'GUIDED mode')
@@ -56,6 +68,14 @@ class FlightNode(Node):
         elif self.phase == 'wait_landing' and self.status is not None and not self.status.flying:
             self.finished = True
             self.get_logger().info('Landing completed; flight sequence finished')
+
+    def armed_or_starting(self):
+        if self.status is not None and self.status.armed:
+            self.armed_seen = True
+            return True
+        # Status is published asynchronously and can briefly lag the takeoff reply.
+        return (not self.armed_seen and self.takeoff_accepted_at is not None
+                and time.monotonic() - self.takeoff_accepted_at < 5.0)
 
     def _call(self, client, request, callback, label):
         self.request_in_progress = True
@@ -74,7 +94,10 @@ class FlightNode(Node):
     def _prearm_done(self, label, future):
         r = self._result(label, future)
         if r is None: return
-        if not r.success: self.fail(f'Pre-arm rejected: {r.message}')
+        if not r.success and r.message == 'Vehicle is Not Armable':
+            self.next_prearm_check_at = time.monotonic() + self.PREARM_RETRY_SECONDS
+            self.get_logger().info('Waiting for ArduPilot EKF/GPS readiness before arming')
+        elif not r.success: self.fail(f'Pre-arm rejected: {r.message}')
         else:
             self.get_logger().info(f'Pre-arm passed: {r.message}')
             self.phase = 'guided'
@@ -101,6 +124,8 @@ class FlightNode(Node):
         if r is None: return
         if not r.status: self.fail('ArduPilot rejected takeoff')
         else:
+            self.takeoff_accepted_at = time.monotonic()
+            self.armed_seen = bool(self.status and self.status.armed)
             self.get_logger().info(f'Takeoff to {self.TAKEOFF_ALTITUDE:.1f} m accepted')
             self.phase = 'airborne'
 
